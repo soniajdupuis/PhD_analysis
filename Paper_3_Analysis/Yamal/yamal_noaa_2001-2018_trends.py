@@ -73,7 +73,7 @@ def semimonth_time(time):
 
 results = []
 
-for year in range(1981, 2002):
+for year in range(2001, 2019):
 
     ds = globals()[f"lst_{year}"]
 

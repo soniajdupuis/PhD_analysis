@@ -73,7 +73,7 @@ def semimonth_time(time):
 
 results = []
 
-for year in range(1981, 2002):
+for year in range(2001, 2019):
 
     ds = globals()[f"lst_{year}"]
 
@@ -123,15 +123,15 @@ lst_semimonth = lst_semimonth.assign_coords(bin=bin_index)
 
 climatology = lst_semimonth.groupby("bin").mean("time")
 # (lat=slice(74,60), lon=slice(65,74))
-climatology.sel(lat=slice(84,58), lon=slice(-73,-7)).isel(bin=0).plot();
+climatology.sel(lat=slice(58,84), lon=slice(-73,-7)).isel(bin=0).plot();
 plt.savefig('greenland_climatology_bin0_2001-2018.png')
 
 anomalies = lst_semimonth.groupby("bin") - climatology
 
-anomalies.sel(lat=slice(84,58), lon=slice(-73,-7), time=slice('2001-05','2001-08')).plot(x="lon", y="lat", col="time", col_wrap=5, vmin=-10, vmax=10);
+anomalies.sel(lat=slice(58, 84), lon=slice(-73,-7), time=slice('2001-05','2001-08')).plot(x="lon", y="lat", col="time", col_wrap=5, vmin=-10, vmax=10);
 plt.savefig('greenalnd_anomalies__2001-2018.png')
 
-anoms = anomalies.sel((84,58), lon=slice(-73,-7))
+anoms = anomalies.sel(lat=slice(58, 84), lon=slice(-73,-7))
 anoms = anoms.chunk(dict(time=-1))   # <<< REQUIRED
 
 time_numeric = (
