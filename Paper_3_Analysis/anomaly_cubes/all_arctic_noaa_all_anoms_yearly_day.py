@@ -15,7 +15,7 @@ land_cover = xr.open_dataset('/mnt/data7/nfs4/avh_ndvi/sdupuis/ESACCI-LC-L4-LCCS
 lc = land_cover.sel(lat=slice(74,60), lon=slice(65,74))
 
 # read per year and then concact!
-lst_1981 = xr.open_mfdataset('/mnt/data7/nfs4/avh_lst/sdupuis/EUSTACE/All_Arctic/1981/AVN07/LST_AVN07_All_Arctic__v.11.0__*DAY.nc', engine='netcdf4')
+#lst_1981 = xr.open_mfdataset('/mnt/data7/nfs4/avh_lst/sdupuis/EUSTACE/All_Arctic/1981/AVN07/LST_AVN07_All_Arctic__v.11.0__*DAY.nc', engine='netcdf4')
 
 lst_1982 = xr.open_mfdataset('/mnt/data7/nfs4/avh_lst/sdupuis/EUSTACE/All_Arctic/1982/AVN07/LST_AVN07_All_Arctic__v.11.0__*DAY.nc', engine='netcdf4')
 
@@ -23,17 +23,21 @@ lst_1983 = xr.open_mfdataset('/mnt/data7/nfs4/avh_lst/sdupuis/EUSTACE/All_Arctic
 
 lst_1984 = xr.open_mfdataset('/mnt/data7/nfs4/avh_lst/sdupuis/EUSTACE/All_Arctic/1984/AVN07/LST_AVN07_All_Arctic__v.11.0__*DAY.nc', engine='netcdf4')
 
-lst_1985 = xr.open_mfdataset('/mnt/data7/nfs4/avh_lst/sdupuis/EUSTACE/All_Arctic/1985/AVN07/LST_AVN07_All_Arctic__v.11.0__*DAY.nc', engine='netcdf4')
+lst_1985_07 = xr.open_mfdataset('/mnt/data7/nfs4/avh_lst/sdupuis/EUSTACE/All_Arctic/1985/AVN07/LST_AVN07_All_Arctic__v.11.0__*DAY.nc', engine='netcdf4')
 
 lst_1985_09 = xr.open_mfdataset('/mnt/data7/nfs4/avh_lst/sdupuis/EUSTACE/All_Arctic/1985/AVN09/LST_AVN09_All_Arctic__v.11.0__*DAY.nc', engine='netcdf4')
 
-lst_1985 =xr.concat([lst_1985, lst_1985_09], dim='time')
+lst_1985 =xr.concat([lst_1985_07, lst_1985_09], dim='time')
 
 lst_1986 = xr.open_mfdataset('/mnt/data7/nfs4/avh_lst/sdupuis/EUSTACE/All_Arctic/1986/AVN09/LST_AVN09_All_Arctic__v.11.0__*DAY.nc', engine='netcdf4')
 
 lst_1987 = xr.open_mfdataset('/mnt/data7/nfs4/avh_lst/sdupuis/EUSTACE/All_Arctic/1987/AVN09/LST_AVN09_All_Arctic__v.11.0__*DAY.nc', engine='netcdf4')
 
-lst_1988 = xr.open_mfdataset('/mnt/data7/nfs4/avh_lst/sdupuis/EUSTACE/All_Arctic/1988/AVN09/LST_AVN09_All_Arctic__v.11.0__*DAY.nc', engine='netcdf4')
+lst_1988_09 = xr.open_mfdataset('/mnt/data7/nfs4/avh_lst/sdupuis/EUSTACE/All_Arctic/1988/AVN09/LST_AVN09_All_Arctic__v.11.0__*DAY.nc', engine='netcdf4')
+
+lst_1988_11 = xr.open_mfdataset('/mnt/data7/nfs4/avh_lst/sdupuis/EUSTACE/All_Arctic/1988/AVN11/LST_AVN11_All_Arctic__v.11.0__*DAY.nc', engine='netcdf4')
+lst_1988 =xr.concat([lst_1988_09, lst_1988_11], dim='time')
+print(lst_1988)
 
 lst_1989 = xr.open_mfdataset('/mnt/data7/nfs4/avh_lst/sdupuis/EUSTACE/All_Arctic/1989/AVN11/LST_AVN11_All_Arctic__v.11.0__*DAY.nc', engine='netcdf4')
 
@@ -101,7 +105,7 @@ lc_interp = lc.interp(lat=lst_2018.coords['lat'], lon=lst_2018.coords['lon'], me
 # load the time series somewhere ?
 results = {}
 
-for year in range(1981, 2019):
+for year in range(1982, 2019):
 
     ds = globals()[f"lst_{year}"]   # load lst_1981, lst_1982, ...
 
@@ -110,6 +114,7 @@ for year in range(1981, 2019):
     ds = ds.where(lc_interp['lccs_class'] != 210)
     print(ds)
     clean_LST = ds['LST'].where(ds['LST'] != 110, np.nan)
+    clean_LST = clean_LST.sortby("time")
     max_10d = (
         clean_LST
         .resample(
@@ -123,7 +128,7 @@ for year in range(1981, 2019):
 
     results[year] = max_10d
 
-combined = xr.concat([results[y] for y in range(1981, 2019)], dim="time")
+combined = xr.concat([results[y] for y in range(1982, 2019)], dim="time")
 
 climatology = combined.mean("time")
 
@@ -140,10 +145,62 @@ stand_anomalies = xr.apply_ufunc(
 )
 
 standard_anoms = stand_anomalies.compute()
+anomalies = anomalies.chunk(dict(time=-1))   # <<< REQUIRED
 
-standard_anoms.to_netcdf('output_data/standard_anomalies_yamal_day_yearly_2.nc')
+
+def theil_sen_1d(y, x):
+    # remove NaNs
+    mask = np.isfinite(y) & np.isfinite(x)
+    
+    # not enough data points → return NaN
+    if mask.sum() < 5:
+        return np.nan
+    
+    slope, intercept, lower, upper = theilslopes(y[mask], x[mask])
+    return slope
+
+slope = xr.apply_ufunc(
+    theil_sen_1d,
+    anomalies,
+    anomalies.time.dt.year,
+    input_core_dims=[["time"], ["time"]],
+    output_core_dims=[[]],
+    vectorize=True,
+    dask="parallelized",
+    output_dtypes=[float],
+)
+
+def mk_pvalue(y):
+    y = y[np.isfinite(y)]
+    if y.size < 5:
+        return np.nan
+    return mk.original_test(y).p
+
+mk_p = xr.apply_ufunc(
+    mk_pvalue,
+    anomalies,
+    input_core_dims=[["time"]],
+    output_core_dims=[[]],
+    vectorize=True,
+    dask="parallelized",
+    output_dtypes=[float],
+)
+
+trend_per_decade = slope * 1
+
+with ProgressBar():
+    res = trend_per_decade.compute()
+
+anomalies.to_netcdf('output_data/anomalies_yamal_day_yearly.nc')
+
+with ProgressBar():
+    p_val = mk_p.compute()
+
+
+significant_trend = res.where(p_val < 0.05)
+significant_trend.to_netcdf('output_data/significant_trends_yearly_lstmax.nc')
 
 standard_anoms.sel(lat=slice(55,72), lon=slice(-168,-150)).plot.hist(bins=50)
-plt.savefig('figures/yamal_day_anomalies_bins_hist_yearly.png')
+#plt.savefig('figures/yamal_day_anomalies_bins_hist_yearly.png')
 above_1 = (standard_anoms > 1).sum(dim="time")
 below_minus1 = (standard_anoms < -1).sum(dim="time")
